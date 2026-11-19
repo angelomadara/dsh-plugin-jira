@@ -2,7 +2,7 @@
 
 Jira ticket intake for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`), built against dsh 0.2.x.
 
-- **Settings → Built-in plugins → Jira** — store the site URL, email and API token in the DSH credential store.
+- **Settings → Jira** — store the site URL, email and API token in the DSH credential store.
 - **`/jira-do TCKT-123`** — fetches the issue, checks out `dev`, pulls, creates branch `TCKT-123`, then hands it to the agent with a fix brief (root cause, minimal change, tests, a full change report at `docs/jira/TCKT-123.md`, no commit).
 - **`/jira-comment [TCKT-123] text`** — posts a comment; the key is taken from the current branch when the branch is a ticket key, so `/jira-comment Fixed in this branch` is enough. **Omit the text** (e.g. `/jira-comment` on `TCKT-123`) and the agent analyzes all the branch's changes — committed since `dev`/`main`/`master` plus the working tree — and writes the comment itself.
 - **`jira_ticket` tool** — fetch one issue (summary, description, status, labels, last 20 comments) without touching git.

@@ -148,7 +148,7 @@ client.apply({
   },
   remote: { credentials: {} },
 })
-assert.equal(registration.spec.name, 'settings.plugins.tab')
+assert.equal(registration.spec.name, 'settings.section')
 assert.equal(registration.spec.id, 'jira')
 assert.equal(registration.spec.label(), 'Jira')
 assert.equal(typeof registration.component, 'function')

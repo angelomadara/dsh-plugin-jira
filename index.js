@@ -25,7 +25,7 @@ async function readConfig(ctx) {
   const read = async (ref) => (await ctx.credentials.resolve(ref))?.value
   const [site, email, token] = await Promise.all([read(REF.site), read(REF.email), read(REF.token)])
   if (!site || !token) {
-    throw new Error('Jira is not configured — open Settings → Built-in plugins → Jira and set site URL and API token.')
+    throw new Error('Jira is not configured — open Settings → Jira and set site URL and API token.')
   }
   let url
   try {
@@ -49,7 +49,7 @@ async function credentialHint(config) {
       headers: { authorization: config.authorization, accept: 'application/json' },
     })
     if (response.status === 401) {
-      return ' — Jira rejected the credentials (401 on /myself); update the email/API token in Settings → Built-in plugins → Jira.'
+      return ' — Jira rejected the credentials (401 on /myself); update the email/API token in Settings → Jira.'
     }
   } catch {}
   return ''

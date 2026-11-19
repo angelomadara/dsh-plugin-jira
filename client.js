@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
       color: 'var(--dsw-alias-label-primary-foreground)',
     }
 
-    /** Settings → Built-in plugins → Jira: store the three credentials the host half resolves. */
+    /** Settings → Jira: store the three credentials the host half resolves. */
     function apply(ctx) {
       function JiraSettings() {
         const [values, setValues] = React.useState(EMPTY)
@@ -96,10 +96,10 @@ window.__ModuleLoader__.load({
           h('p', { style: hint }, 'Usage: /jira-do TCKT-123 — checks out dev, pulls, branches the ticket key, then hands the ticket to the agent.'))
       }
 
-      ctx.effect(() => ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
-        name: 'settings.plugins.tab',
+      ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({
+        name: 'settings.section',
         id: 'jira',
-        order: 41,
+        order: 25,
         label: () => 'Jira',
       }, JiraSettings)), 'jira: settings page')
     }
