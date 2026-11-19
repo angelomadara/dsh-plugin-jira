@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     const EMPTY = { site: '', email: '', token: '' }
 
     /** Required client services. */
-    const inject = ['slots', 'remote', 'remote.credentials']
+    const inject = ['slots', 'remote', 'remote.credentials', 'remote.commands', 'uiSession']
 
     const label = { fontSize: 12, fontWeight: 500, color: 'var(--dsw-alias-label-secondary)' }
     const hint = { fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', margin: 0 }
@@ -31,6 +31,11 @@ window.__ModuleLoader__.load({
       borderRadius: 'var(--dsw-radius-md)', background: 'var(--dsw-alias-button-primary-fill)',
       color: 'var(--dsw-alias-label-primary-foreground)',
     }
+    const buttonGhost = {
+      height: 32, padding: '0 14px', fontSize: 14, cursor: 'pointer',
+      borderRadius: 'var(--dsw-radius-md)', background: 'transparent',
+      border: '.5px solid var(--dsw-alias-border-l4)', color: 'var(--dsw-alias-label-primary)',
+    }
 
     /** Settings → Jira: store the three credentials the host half resolves. */
     function apply(ctx) {
@@ -38,6 +43,7 @@ window.__ModuleLoader__.load({
         const [values, setValues] = React.useState(EMPTY)
         const [configured, setConfigured] = React.useState({})
         const [status, setStatus] = React.useState('')
+        const [checking, setChecking] = React.useState(false)
 
         const refresh = React.useCallback(async () => {
           try {
@@ -74,6 +80,28 @@ window.__ModuleLoader__.load({
           }
         }
 
+        async function check() {
+          const sessionId = ctx.uiSession.adapter.current.getSnapshot()?.key
+          if (!sessionId) {
+            setStatus('Open a conversation first; the check runs /jira-check in the current session.')
+            return
+          }
+          setChecking(true)
+          setStatus('Checking…')
+          try {
+            const response = await ctx.remote.commands.execute(sessionId, '/jira-check', [])
+            if (!response.ok) {
+              throw new Error(`${response.error?.code ?? 'error'}: ${response.error?.message ?? 'command failed'}`)
+            }
+            const result = response.value?.result
+            setStatus(result ? result.text : 'The /jira-check command is not available.')
+          } catch (error) {
+            setStatus(String(error?.message ?? error))
+          } finally {
+            setChecking(false)
+          }
+        }
+
         const rows = FIELDS.map((field) => h('label', { key: field.key, style: { display: 'flex', flexDirection: 'column', gap: 6 } },
           h('span', { style: label },
             field.label,
@@ -92,8 +120,9 @@ window.__ModuleLoader__.load({
           ...rows,
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 12 } },
             h('button', { type: 'button', style: button, onClick: save }, 'Save'),
-            h('span', { style: hint }, status)),
-          h('p', { style: hint }, 'Usage: /jira-do TCKT-123 — checks out dev, pulls, branches the ticket key, then hands the ticket to the agent.'))
+            h('button', { type: 'button', style: buttonGhost, onClick: check, disabled: checking }, checking ? 'Checking…' : 'Check connection'),
+            h('span', { style: { ...hint, whiteSpace: 'pre-wrap' } }, status)),
+          h('p', { style: hint }, 'Usage: /jira-do TCKT-123 — checks out the base branch (dev by default), pulls, branches the ticket key, then hands the ticket to the agent.'))
       }
 
       ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({
