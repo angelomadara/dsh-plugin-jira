@@ -40,22 +40,31 @@ window.__ModuleLoader__.load({
         const [status, setStatus] = React.useState('')
 
         const refresh = React.useCallback(async () => {
-          const response = await ctx.remote.credentials.describe(FIELDS.map((f) => f.ref))
-          if (!response.ok) {
-            setStatus(response.error?.message ?? 'Could not read credentials.')
-            return
+          try {
+            const response = await ctx.remote.credentials.describe(FIELDS.map((f) => f.ref))
+            if (!response.ok) {
+              setStatus(response.error?.message ?? 'Could not read credentials.')
+              return
+            }
+            setConfigured(Object.fromEntries(FIELDS.map((f) => [f.key, Boolean(response.value[f.ref]?.configured)])))
+          } catch (error) {
+            setStatus(String(error?.message ?? error))
           }
-          setConfigured(Object.fromEntries(FIELDS.map((f) => [f.key, Boolean(response.value[f.ref]?.configured)])))
         }, [])
 
         React.useEffect(() => { refresh() }, [refresh])
 
         async function save() {
+          const pending = FIELDS.map((field) => [field, values[field.key].trim()]).filter(([, value]) => value)
+          if (pending.length === 0) {
+            setStatus('Nothing to save — fill a field first.')
+            return
+          }
           setStatus('Saving…')
           try {
-            for (const field of FIELDS) {
-              const value = values[field.key].trim()
-              if (value) await ctx.remote.credentials.set(field.ref, value)
+            for (const [field, value] of pending) {
+              const response = await ctx.remote.credentials.set(field.ref, value)
+              if (!response.ok) throw new Error(response.error?.message ?? `Could not save ${field.ref}.`)
             }
             setValues(EMPTY)
             await refresh()
@@ -79,7 +88,7 @@ window.__ModuleLoader__.load({
 
         return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560 } },
           h('p', { style: hint },
-            'Credentials for the /jira-do command. Stored in the DSH credential store, not in settings. Leave a field blank to keep its current value. With email blank, the token is used as an already encoded Basic value.'),
+            'Credentials for the /jira-do command. Stored in the DSH credential store, not in settings. Leave a field blank to keep its current value. With the email blank, the token is sent as a Bearer PAT (Jira Data Center); with an email, it is encoded as Basic (Jira Cloud).'),
           ...rows,
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 12 } },
             h('button', { type: 'button', style: button, onClick: save }, 'Save'),

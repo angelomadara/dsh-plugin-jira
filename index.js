@@ -14,10 +14,12 @@ export const inject = ['commands', 'tools', 'credentials']
 const REF = { site: 'JIRA_SITE', email: 'JIRA_EMAIL', token: 'JIRA_API_TOKEN' }
 const KEY_RE = /^[A-Z][A-Z0-9_]*-\d+$/
 const MAX_COMMENTS = 20
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 /**
- * Resolve the credentials. `JIRA_EMAIL` + `JIRA_API_TOKEN` are encoded into Basic auth; with the email
- * left blank the token is taken as an already encoded Basic value (what a hand-rolled script pastes).
+ * Resolve the credentials. `JIRA_EMAIL` + `JIRA_API_TOKEN` are encoded into Basic auth (Jira Cloud);
+ * with the email left blank the token is sent as `Bearer` (Jira Data Center PAT) unless it is already
+ * a `Basic …` value.
  */
 async function readConfig(ctx) {
   const read = async (ref) => (await ctx.credentials.resolve(ref))?.value
@@ -25,9 +27,18 @@ async function readConfig(ctx) {
   if (!site || !token) {
     throw new Error('Jira is not configured — open Settings → Built-in plugins → Jira and set site URL and API token.')
   }
+  let url
+  try {
+    url = new URL(site)
+  } catch {
+    throw new Error(`Jira: "${site}" is not a valid site URL.`)
+  }
+  if (url.protocol !== 'https:' && !LOCAL_HOSTS.has(url.hostname)) {
+    throw new Error('Jira: the site URL must use https (the API token would otherwise travel in cleartext).')
+  }
   const authorization = email
     ? `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`
-    : `Basic ${token.replace(/^Basic\s+/i, '')}`
+    : /^Basic\s/i.test(token) ? token : `Bearer ${token}`
   return { site: site.replace(/\/+$/, ''), authorization }
 }
 
@@ -156,17 +167,23 @@ export function apply(ctx) {
   ctx.commands.register({
     name: 'jira-do',
     description: 'Fetch a Jira ticket: checkout dev, pull, branch the ticket key, then hand it to the agent to fix.',
+    input: { hint: 'TCKT-123' },
     async handler(invocation) {
       const key = invocation.rawInput.trim().toUpperCase()
       if (!KEY_RE.test(key)) return { kind: 'error', text: 'Usage: /jira-do TCKT-123' }
       const cwd = invocation.agent.session.header?.cwd
       if (!cwd) return { kind: 'error', text: 'Jira: this session has no working directory.' }
 
-      let logPromise
+      let log
       try {
         const config = await readConfig(ctx)
-        logPromise = Promise.resolve(prepareBranch(cwd, key))
-        const [log, issue] = await Promise.all([logPromise, fetchIssue(config, key)])
+        let issue
+        try {
+          issue = await fetchIssue(config, key)
+        } catch (error) {
+          return { kind: 'error', text: `Jira fetch failed: ${error?.message ?? error}` }
+        }
+        log = prepareBranch(cwd, key)
         try {
           invocation.agent.followup({
             id: randomUUID(),
@@ -179,7 +196,7 @@ export function apply(ctx) {
             text: `${issue.key} — ${issue.fields?.summary ?? ''}\n${log.join(' · ')}\nHanded to the agent.`,
           }
         } catch (error) {
-          return { kind: 'error', text: `Jira: ${log.join(' · ')}; could not reach the agent (${error?.message ?? error})` }
+          return { kind: 'error', text: `${log.join(' · ')}; could not reach the agent (${error?.message ?? error})` }
         }
       } catch (error) {
         return { kind: 'error', text: String(error?.message ?? error) }
@@ -216,6 +233,5 @@ export function apply(ctx) {
       const issue = await fetchIssue(await readConfig(ctx), key)
       return { key: issue.key, text: renderIssue(issue) }
     },
-    presentCall: (args) => ({ card: 'generic', title: `Jira ${args?.key ?? ''}`, kind: 'other', rawInput: args?.key }),
   })
 }
