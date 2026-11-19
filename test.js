@@ -4,11 +4,14 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from './index.js'
-import { baseBranch } from './lib/git.js'
+import { baseBranch, ensureWorktree, findTicketWorktree } from './lib/git.js'
+import { renderIssue } from './lib/jira.js'
+import { downloadAttachments } from './lib/attachments.js'
+import { branchName, keyFromBranch, repoConfig } from './lib/repo.js'
 
 const cwd = mkdtempSync(join(tmpdir(), 'jira-plugin-'))
 const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' })
@@ -77,7 +80,7 @@ const tool = await registered.tools.jira_ticket.execute({ key: 'qube-1' })
 assert.equal(tool.key, 'QUBE-1')
 assert.match(tool.text, /After a discount the total is wrong/)
 assert.match(lastCommentUrl, /\/rest\/api\/3\/issue\/QUBE-1\/comment\?/)
-assert.match(lastCommentUrl, /startAt=0&maxResults=20/)
+assert.match(lastCommentUrl, /startAt=0&maxResults=100/)
 assert.equal(lastRequest.init.headers.authorization, 'Bearer blob')
 
 // /jira-check names the token's account and its visible projects, and turns a 401 into one clear fix.
@@ -192,6 +195,15 @@ const wrongBranch = await registered.commands['jira-comment'].handler({ rawInput
 assert.equal(wrongBranch.kind, 'error')
 assert.match(wrongBranch.text, /not the current branch/)
 
+// A dirty tracked tree blocks /jira-do before it switches branches.
+globalThis.fetch = async (url) => url.includes('/comment?')
+  ? { ok: true, json: async () => ({ total: 0, comments: [] }) }
+  : { ok: true, json: async () => issue }
+const dirty = await registered.commands['jira-do'].handler({ rawInput: 'QUBE-3', agent })
+assert.equal(dirty.kind, 'error')
+assert.match(dirty.text, /tracked changes/)
+assert.equal(execFileSync('git', ['branch', '--list', 'QUBE-3'], { cwd, encoding: 'utf8' }).trim(), '')
+
 // A ticket that Jira will not return must not leave a new branch behind; a rejected token is named as such.
 globalThis.fetch = async (url) => url.endsWith('/myself')
   ? { ok: false, status: 401, text: async () => '' }
@@ -230,10 +242,62 @@ assert.equal(registration.spec.id, 'jira')
 assert.equal(registration.spec.label(), 'Jira')
 assert.equal(typeof registration.component, 'function')
 
-// Base branch comes from .dsh-jira.json, defaulting to dev.
+// Repo config: base, branch template and custom field ids.
 const configDir = mkdtempSync(join(tmpdir(), 'jira-config-'))
 assert.equal(baseBranch(configDir), 'dev')
-writeFileSync(join(configDir, '.dsh-jira.json'), '{"base":"develop"}')
-assert.equal(baseBranch(configDir), 'develop')
+writeFileSync(join(configDir, '.dsh-jira.json'), JSON.stringify({
+  base: 'develop',
+  branch: 'feature/{key}-{slug}',
+  fields: { acceptanceCriteria: 'customfield_10001' },
+}))
+const repo = repoConfig(configDir)
+assert.equal(repo.base, 'develop')
+assert.equal(branchName(repo, 'QUBE-1', 'Fix the total!'), 'feature/QUBE-1-fix-the-total')
+assert.equal(keyFromBranch('feature/QUBE-1-fix-the-total'), 'QUBE-1')
+assert.equal(repo.fields.acceptanceCriteria, 'customfield_10001')
+
+// Rich ticket rendering: components, fix versions, environment, subtasks, attachments, custom fields.
+const rich = renderIssue({
+  key: 'QUBE-2',
+  fields: {
+    summary: 'Rich ticket',
+    issuetype: { name: 'Bug' },
+    status: { name: 'To Do' },
+    components: [{ name: 'API' }, { name: 'Web' }],
+    fixVersions: [{ name: '1.2' }],
+    environment: 'Staging',
+    subtasks: [{ key: 'QUBE-3', fields: { summary: 'Sub' } }],
+    attachment: [{ id: '9', filename: 'log.txt', size: 2048 }],
+    customfield_10001: 'Must be fast',
+    customfield_10002: 3,
+  },
+}, { acceptanceCriteria: 'customfield_10001', storyPoints: 'customfield_10002' })
+assert.match(rich, /Components: API, Web/)
+assert.match(rich, /Fix versions: 1.2/)
+assert.match(rich, /Environment: Staging/)
+assert.match(rich, /Subtasks: QUBE-3 Sub/)
+assert.match(rich, /Attachments: log.txt \(2 KB\)/)
+assert.match(rich, /Acceptance criteria: Must be fast/)
+assert.match(rich, /Story points: 3/)
+
+// Attachments land under docs/jira/<KEY>/ and never escape it via the filename.
+const attachDir = mkdtempSync(join(tmpdir(), 'jira-attach-'))
+globalThis.fetch = async () => ({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer })
+const downloaded = await downloadAttachments(
+  { site: 'https://example.atlassian.net', authorization: 'Basic x' },
+  { fields: { attachment: [{ id: '9', filename: '../evil.txt', size: 3, content: 'https://example.atlassian.net/secure/attachment/9/evil.txt' }] } },
+  attachDir,
+  'QUBE-2',
+)
+assert.equal(downloaded.files.length, 1)
+assert.ok(existsSync(join(attachDir, 'docs', 'jira', 'QUBE-2', '9-evil.txt')))
+
+// Worktree mode creates the tree without switching the current checkout, then cleans up.
+const worktree = ensureWorktree(cwd, 'QUBE-7', 'dev')
+assert.ok(existsSync(worktree))
+assert.equal(findTicketWorktree(cwd, 'QUBE-7')?.path, worktree)
+assert.equal(execFileSync('git', ['branch', '--show-current'], { cwd, encoding: 'utf8' }).trim(), 'QUBE-1')
+execFileSync('git', ['worktree', 'remove', '--force', worktree], { cwd })
+execFileSync('git', ['branch', '-D', 'QUBE-7'], { cwd })
 
 console.log('ok — command, branch, hand-off, tools, comments, client registration')
