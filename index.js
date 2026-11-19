@@ -241,7 +241,7 @@ function summarizePrompt(key, changes) {
   return lines.join('\n')
 }
 
-function taskPrompt(key, issue) {
+function taskPrompt(key, issue, site) {
   return [
     `Jira ${key} is checked out on branch ${key} (based on dev).`,
     '',
@@ -250,9 +250,15 @@ function taskPrompt(key, issue) {
     'Fix this like any other ticket in this repo:',
     '1. Read the code the ticket points at and name the root cause, not the symptom.',
     '2. Make the smallest change that fixes it, following the patterns already in the repo.',
-    `3. Write docs/jira/${key}.md — file paths, line numbers, severity, root cause, fix.`,
-    '4. Run the tests that cover the change.',
-    '5. Do not commit or push; leave the diff for review.',
+    '3. Run the tests that cover the change and record the exact commands and results.',
+    `4. When the work is done, write the full change report to docs/jira/${key}.md at the repository root (create docs/jira if missing). It must contain:`,
+    `   - ticket: ${key}, its summary, and the Jira URL ${site}/browse/${key}`,
+    '   - severity/impact and the root cause',
+    '   - every file changed, what changed, and why',
+    '   - verification: the exact commands run and their results',
+    '   - risks, follow-ups, and anything deliberately left out of scope',
+    `5. The report is part of the deliverable: docs/jira/${key}.md must exist and be complete before you finish.`,
+    '6. Do not commit or push; leave the diff for review.',
   ].join('\n')
 }
 
@@ -282,7 +288,7 @@ export function apply(ctx) {
           invocation.agent.followup({
             id: randomUUID(),
             role: 'user',
-            content: [{ type: 'text', text: taskPrompt(key, issue) }],
+            content: [{ type: 'text', text: taskPrompt(key, issue, config.site) }],
             source: { kind: 'user' },
           })
           return {
