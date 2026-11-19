@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-jira",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Jira ticket intake for DeepSeek Harness: settings page for the API token, /jira-do command that branches off dev and hands the ticket to the agent, /jira-comment plus jira_ticket and jira_comment tools",
   "type": "module",
   "main": "index.js",
