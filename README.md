@@ -4,6 +4,7 @@ Jira ticket intake for [DeepSeek Harness](https://github.com/deepseek-ai/deepsee
 
 - **Settings → Jira** — store the site URL, email and API token in the DSH credential store.
 - **`/jira-do TCKT-123`** — fetches the issue, checks out `dev`, pulls, creates branch `TCKT-123`, then hands it to the agent with a fix brief (root cause, minimal change, tests, a full change report at `docs/jira/TCKT-123.md`, no commit).
+- **`/jira-check`** — shows which account the token authenticates as and which projects it can see; a 401 is reported with the exact fix.
 - **`/jira-comment [TCKT-123] text`** — posts a comment; the key is taken from the current branch when the branch is a ticket key, so `/jira-comment Fixed in this branch` is enough. **Omit the text** (e.g. `/jira-comment` on `TCKT-123`) and the agent analyzes all the branch's changes — committed since `dev`/`main`/`master` plus the working tree — and writes the comment itself.
 - **`jira_ticket` tool** — fetch one issue (summary, description, status, labels, last 20 comments) without touching git.
 - **`jira_comment` tool** — post a comment (progress, findings, completion) on one issue.
@@ -11,7 +12,13 @@ Jira ticket intake for [DeepSeek Harness](https://github.com/deepseek-ai/deepsee
 ```
 package.json      dsh.bundle.patch + dsh.client (platform: web); exports "." and "./client"
 cordis.patch.yml  insert row  id: jira → dsh-plugin-jira
-index.js          host half: commands + tools + git + Jira REST (no @deepseek-ai/* imports)
+index.js          host entry: apply() wires the modules below
+lib/config.js     credential refs, auth header, rejected-credential hint
+lib/jira.js       REST v3 calls, ADF, issue rendering, /jira-check
+lib/git.js        branch prep, branch diff and status
+lib/prompts.js    agent hand-off prompts
+lib/commands.js   /jira-do, /jira-check, /jira-comment
+lib/tools.js      jira_ticket, jira_comment
 client.js         browser half: the settings page, in window.__ModuleLoader__ format
 test.js           offline self-check: branch prep, hand-off, tools, comments, client registration
 ```

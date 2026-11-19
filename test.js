@@ -46,6 +46,7 @@ const ctx = {
 }
 apply(ctx)
 assert.equal(registered.commands['jira-do'].name, 'jira-do')
+assert.equal(registered.commands['jira-check'].name, 'jira-check')
 assert.equal(registered.commands['jira-comment'].name, 'jira-comment')
 assert.equal(registered.tools.jira_ticket.name, 'jira_ticket')
 assert.equal(registered.tools.jira_comment.name, 'jira_comment')
@@ -71,6 +72,20 @@ assert.equal(tool.key, 'QUBE-1')
 assert.match(tool.text, /After a discount the total is wrong/)
 assert.match(lastRequest.url, /\/rest\/api\/3\/issue\/QUBE-1\?/)
 assert.equal(lastRequest.init.headers.authorization, 'Bearer blob')
+
+// /jira-check names the token's account and its visible projects, and turns a 401 into one clear fix.
+globalThis.fetch = async (url) => url.endsWith('/myself')
+  ? { ok: true, json: async () => ({ displayName: 'Angelo Madara', emailAddress: 'a@example.com', accountId: 'acc-1' }) }
+  : { ok: true, json: async () => ({ total: 2, values: [{ key: 'QUBE', name: 'QMS' }, { key: 'OPS', name: 'Ops' }] }) }
+const check = await registered.commands['jira-check'].handler({})
+assert.equal(check.kind, 'success')
+assert.match(check.text, /Angelo Madara/)
+assert.match(check.text, /Visible projects \(2\): QUBE — QMS, OPS — Ops/)
+
+globalThis.fetch = async () => ({ ok: false, status: 401, text: async () => 'denied' })
+const checkFail = await registered.commands['jira-check'].handler({})
+assert.equal(checkFail.kind, 'error')
+assert.match(checkFail.text, /rejected the credentials/)
 
 // Comments go out as ADF on the v3 comment endpoint.
 globalThis.fetch = async (url, init) => {
