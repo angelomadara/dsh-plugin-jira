@@ -18,21 +18,27 @@ test.js           offline self-check: branch prep, hand-off, tools, comments, cl
 
 ## Install
 
-In the desktop app: **Plugins → install**, using `link:/absolute/path/to/dsh-plugin-jira` while developing. With a CLI profile:
+Published package:
 
 ```sh
-dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-jira
+dsh plugin --profile web add dsh-plugin-jira
 dsh web --dump-config | grep 'id: jira'   # confirm the layer mounted
 # restart dsh web
 ```
 
-Publishing as a repo bundle works too:
+From the repo (also what the Desktop **Plugins → install** dialog takes):
 
 ```sh
 dsh plugin --profile web add github:angelomadara/dsh-plugin-jira
 ```
 
-Remove it from the Plugins page, or `dsh plugin --profile web remove dsh-plugin-jira` and delete the `jira` row from the profile's `cordis.patch.yml`.
+Local development:
+
+```sh
+dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-jira
+```
+
+Then open **Settings → Jira** and store the site URL, email and API token. Remove it from the Plugins page, or `dsh plugin --profile web remove dsh-plugin-jira` and delete the `jira` row from the profile's `cordis.patch.yml`.
 
 ## Credentials
 

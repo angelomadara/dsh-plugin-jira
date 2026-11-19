@@ -15,6 +15,23 @@
     "README.md"
   ],
   "license": "MIT",
+  "author": "Angelo Madara",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/angelomadara/dsh-plugin-jira.git"
+  },
+  "homepage": "https://github.com/angelomadara/dsh-plugin-jira#readme",
+  "bugs": {
+    "url": "https://github.com/angelomadara/dsh-plugin-jira/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "jira",
+    "atlassian",
+    "cordis"
+  ],
   "engines": {
     "dsh": ">=0.2.0 <0.3.0"
   },
