@@ -8,6 +8,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from './index.js'
+import { baseBranch } from './lib/git.js'
 
 const cwd = mkdtempSync(join(tmpdir(), 'jira-plugin-'))
 const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' })
@@ -30,8 +31,13 @@ const issue = {
   },
 }
 let lastRequest
+let lastCommentUrl
 globalThis.fetch = async (url, init) => {
   lastRequest = { url, init }
+  if (url.includes('/comment?')) {
+    lastCommentUrl = url
+    return { ok: true, json: async () => ({ total: 1, comments: issue.fields.comment.comments }) }
+  }
   return { ok: true, json: async () => issue }
 }
 
@@ -70,7 +76,8 @@ assert.equal(bad.kind, 'error')
 const tool = await registered.tools.jira_ticket.execute({ key: 'qube-1' })
 assert.equal(tool.key, 'QUBE-1')
 assert.match(tool.text, /After a discount the total is wrong/)
-assert.match(lastRequest.url, /\/rest\/api\/3\/issue\/QUBE-1\?/)
+assert.match(lastCommentUrl, /\/rest\/api\/3\/issue\/QUBE-1\/comment\?/)
+assert.match(lastCommentUrl, /startAt=0&maxResults=20/)
 assert.equal(lastRequest.init.headers.authorization, 'Bearer blob')
 
 // /jira-check names the token's account and its visible projects, and turns a 401 into one clear fix.
@@ -86,6 +93,50 @@ globalThis.fetch = async () => ({ ok: false, status: 401, text: async () => 'den
 const checkFail = await registered.commands['jira-check'].handler({})
 assert.equal(checkFail.kind, 'error')
 assert.match(checkFail.text, /rejected the credentials/)
+
+// JQL search: compact list from the tool and the command.
+globalThis.fetch = async () => ({
+  ok: true,
+  json: async () => ({
+    total: 2,
+    issues: [
+      { key: 'QUBE-1', fields: { summary: 'Kiosk shows a stale total', status: { name: 'In Progress' }, assignee: { displayName: 'Angelo' }, issuetype: { name: 'Bug' } } },
+      { key: 'QUBE-9', fields: { summary: 'Other issue', status: { name: 'To Do' }, assignee: null, issuetype: { name: 'Task' } } },
+    ],
+  }),
+})
+const found = await registered.tools.jira_search.execute({ jql: 'project = QUBE', maxResults: 10 })
+assert.match(found.text, /QUBE-1 \[In Progress\] Kiosk shows a stale total — Angelo/)
+assert.match(found.text, /QUBE-9 \[To Do\] Other issue — unassigned/)
+const findCmd = await registered.commands['jira-find'].handler({ rawInput: 'project = QUBE' })
+assert.equal(findCmd.kind, 'success')
+assert.match(findCmd.text, /2 issue\(s\) for: project = QUBE/)
+
+// Transitions: list, apply by destination status, and the command.
+let transitionPost
+globalThis.fetch = async (url, init) => {
+  if (init?.method === 'POST') {
+    transitionPost = JSON.parse(init.body)
+    return { ok: true, status: 204, text: async () => '' }
+  }
+  return {
+    ok: true,
+    json: async () => ({
+      transitions: [
+        { id: '31', name: 'In Review', to: { name: 'In Review' } },
+        { id: '41', name: 'Done', to: { name: 'Done' } },
+      ],
+    }),
+  }
+}
+const listed = await registered.tools.jira_transition.execute({ key: 'QUBE-1' })
+assert.match(listed.text, /In Review → In Review/)
+const moved = await registered.tools.jira_transition.execute({ key: 'QUBE-1', status: 'Done' })
+assert.match(moved.text, /Moved QUBE-1 via "Done" to Done/)
+assert.deepEqual(transitionPost, { transition: { id: '41' } })
+const cmdMove = await registered.commands['jira-transition'].handler({ rawInput: 'QUBE-1 In Review' })
+assert.equal(cmdMove.kind, 'success')
+assert.match(cmdMove.text, /Moved QUBE-1 via "In Review"/)
 
 // Comments go out as ADF on the v3 comment endpoint.
 globalThis.fetch = async (url, init) => {
@@ -103,6 +154,17 @@ const adf = JSON.parse(lastRequest.init.body).body
 assert.equal(adf.type, 'doc')
 assert.equal(adf.content.length, 2)
 assert.deepEqual(adf.content[0].content, [{ type: 'text', text: 'Fixed the total.' }])
+
+// Markdown comments: bold, inline code, lists, fenced code and links.
+await registered.tools.jira_comment.execute({ key: 'QUBE-1', body: '**Bold** and `code`\n\n- one\n- two\n\n```js\nconst x = 1\n```\n\n[link](https://example.com)' })
+const markdown = JSON.parse(lastRequest.init.body).body
+assert.equal(markdown.content[0].content[0].marks[0].type, 'strong')
+assert.equal(markdown.content[0].content[2].marks[0].type, 'code')
+assert.equal(markdown.content[1].type, 'bulletList')
+assert.equal(markdown.content[1].content.length, 2)
+assert.equal(markdown.content[2].type, 'codeBlock')
+assert.equal(markdown.content[2].attrs.language, 'js')
+assert.equal(markdown.content[3].content[0].marks[0].type, 'link')
 
 await assert.rejects(() => registered.tools.jira_comment.execute({ key: 'QUBE-1', body: '  ' }), /must not be empty/)
 
@@ -153,7 +215,7 @@ const React = {
 new Function('window', 'require', readFileSync(new URL('./client.js', import.meta.url), 'utf8'))(globalThis.window, () => React)
 assert.equal(bundle.id, 'dsh-plugin-jira')
 const client = bundle.factory(() => React)
-assert.deepEqual(client.inject, ['slots', 'remote', 'remote.credentials'])
+assert.deepEqual(client.inject, ['slots', 'remote', 'remote.credentials', 'remote.commands', 'uiSession'])
 let registration
 client.apply({
   effect: (fn) => { const dispose = fn(); return () => dispose?.() },
@@ -167,5 +229,11 @@ assert.equal(registration.spec.name, 'settings.section')
 assert.equal(registration.spec.id, 'jira')
 assert.equal(registration.spec.label(), 'Jira')
 assert.equal(typeof registration.component, 'function')
+
+// Base branch comes from .dsh-jira.json, defaulting to dev.
+const configDir = mkdtempSync(join(tmpdir(), 'jira-config-'))
+assert.equal(baseBranch(configDir), 'dev')
+writeFileSync(join(configDir, '.dsh-jira.json'), '{"base":"develop"}')
+assert.equal(baseBranch(configDir), 'develop')
 
 console.log('ok — command, branch, hand-off, tools, comments, client registration')
