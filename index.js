@@ -23,7 +23,7 @@ async function readConfig(ctx) {
   const read = async (ref) => (await ctx.credentials.resolve(ref))?.value
   const [site, email, token] = await Promise.all([read(REF.site), read(REF.email), read(REF.token)])
   if (!site || !token) {
-    throw new Error('Jira is not configured — open Settings → Plugins → Jira and set site URL and API token.')
+    throw new Error('Jira is not configured — open Settings → Built-in plugins → Jira and set site URL and API token.')
   }
   const authorization = email
     ? `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`

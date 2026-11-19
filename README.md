@@ -2,7 +2,7 @@
 
 Jira ticket intake for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`).
 
-- **Settings → Plugins → Jira** — a page to store the site URL, email and API token in the DSH credential store.
+- **Settings → Built-in plugins → Jira** — a page to store the site URL, email and API token in the DSH credential store.
 - **`/jira-do TCKT-123`** — checks out `dev`, pulls, creates branch `TCKT-123`, fetches the issue, then hands it to the agent with a fix brief (root cause, minimal change, `docs/jira/TCKT-123.md`, run tests, no commit).
 - **`jira_ticket` tool** — fetch one issue (summary, description, status, labels, last 20 comments) without touching git.
 
