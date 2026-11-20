@@ -54,6 +54,31 @@ dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-jira
 
 Then open **Settings → Jira** and store the site URL, email and API token. Remove it from the Plugins page, or `dsh plugin --profile web remove dsh-plugin-jira` and delete the `jira` row from the profile's `cordis.patch.yml`.
 
+## Create a Jira API token
+
+### Jira Cloud
+
+1. Sign in to your Atlassian account.
+2. Open **Account Settings → Security → Create and manage API tokens** — <https://id.atlassian.com/manage-profile/security/api-tokens>.
+3. Click **Create API token**, name it (for example `DSH Jira`), then **Create**.
+4. Copy the token right away — Atlassian shows it only once.
+5. In DSH open **Settings → Jira** and fill in:
+   - **Site URL** — `https://yourorg.atlassian.net`
+   - **Email** — the Atlassian account that owns the token
+   - **API token** — the value you copied
+
+   Click **Save**, then **Check connection**. It should report your account and the projects the token can see.
+
+![DeepSeek Harness Settings → Jira](https://raw.githubusercontent.com/angelomadara/dsh-plugin-jira/main/assets/settings-jira.png)
+
+### Jira Data Center
+
+1. Open your avatar → **Account settings** (or **Profile**) → **Personal Access Tokens** → **Create token**.
+2. Copy the token.
+3. In DSH **Settings → Jira**, set the **Site URL** (include a context path such as `https://jira.example.com/jira` when your instance uses one), leave **Email** blank, paste the token, then **Save** → **Check connection**.
+
+The token lives in the DSH credential store, never in this repository or the settings files. **Check connection** runs `/jira-check` in the current session, so its result also appears in that conversation.
+
 ## Credentials
 
 The page writes three credential references: `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN`. Env vars of the same names also resolve, so CI/headless can skip the page.
