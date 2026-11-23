@@ -121,7 +121,7 @@ Optional `.dsh-jira.json` at the repository root:
 - `fields` — friendly label → Jira custom field id; rendered in the brief.
 - `provider` — `github` or `gitlab` when the remote host name does not contain it (self-hosted GitHub/GitLab).
 
-`/jira-mr` and `/jira-pr` commit the ticket's changes, push the branch, then open the request; other untracked files are left out and listed. `/jira-do` reuses an existing branch and reports how many commits ahead it is. Issue-type briefs add specific focus: bug (root cause + repro), story (acceptance criteria), spike (options/recommendation).
+`/jira-mr` and `/jira-pr` commit the whole working tree (`git add -A`, gitignored files excluded — untracked files included), push the branch, then open the request. `/jira-do` reuses an existing branch and reports how many commits ahead it is. Issue-type briefs add specific focus: bug (root cause + repro), story (acceptance criteria), spike (options/recommendation).
 
 ## Check
 
