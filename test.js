@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply } from './index.js'
@@ -12,7 +12,7 @@ import { baseBranch, ensureWorktree, findTicketWorktree } from './lib/git.js'
 import { renderIssue } from './lib/jira.js'
 import { downloadAttachments } from './lib/attachments.js'
 import { branchName, keyFromBranch, repoConfig } from './lib/repo.js'
-import { buildRequestBody, extractSection, parseRemote } from './lib/requests.js'
+import { buildRequestBody, commitTicketChanges, extractSection, parseRemote } from './lib/requests.js'
 
 const cwd = mkdtempSync(join(tmpdir(), 'jira-plugin-'))
 const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' })
@@ -280,6 +280,25 @@ assert.match(prBody, /\[QUBE-1 — Fix it\]\(https:\/\/example\.atlassian\.net\/
 assert.match(prBody, /The cache key ignored the DB\./)
 assert.match(prBody, /- run node test\.js/)
 assert.match(prBody, /\*\*Branch:\*\* `QUBE-1` → `dev`/)
+
+// Auto-commit: tracked changes + the ticket report, but not unrelated untracked files.
+const autoDir = mkdtempSync(join(tmpdir(), 'jira-auto-'))
+const autoGit = (...args) => execFileSync('git', args, { cwd: autoDir, encoding: 'utf8' })
+autoGit('init', '-q', '-b', 'main')
+autoGit('config', 'user.email', 'test@example.com')
+autoGit('config', 'user.name', 'test')
+writeFileSync(join(autoDir, 'app.js'), 'old\n')
+autoGit('add', '.')
+autoGit('commit', '-qm', 'init')
+writeFileSync(join(autoDir, 'app.js'), 'new\n')
+mkdirSync(join(autoDir, 'docs', 'jira'), { recursive: true })
+writeFileSync(join(autoDir, 'docs', 'jira', 'QUBE-9.md'), '# report\n')
+writeFileSync(join(autoDir, 'other.txt'), 'x\n')
+const autoCommit = commitTicketChanges(autoDir, 'QUBE-9', 'QUBE-9: test summary')
+assert.match(autoCommit, /^[0-9a-f]{7,}$/)
+assert.equal(autoGit('log', '-1', '--format=%s').trim(), 'QUBE-9: test summary')
+assert.match(autoGit('status', '--porcelain').trim(), /\?\? other\.txt/)
+assert.equal(commitTicketChanges(autoDir, 'QUBE-9', 'again'), '')
 
 // Repo config: base, branch template and custom field ids.
 const configDir = mkdtempSync(join(tmpdir(), 'jira-config-'))
