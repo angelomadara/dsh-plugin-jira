@@ -7,19 +7,21 @@ Jira ticket intake for [DeepSeek Harness](https://github.com/deepseek-ai/deepsee
 - **`/jira-check`** — shows which account the token authenticates as and which projects it can see; a 401 is reported with the exact fix.
 - **`/jira-find [JQL]`** — searches Jira; with no input it lists your open issues.
 - **`/jira-transition TCKT-123 [status]`** — lists the allowed transitions, or moves the ticket to the matching transition/destination status.
-- **`/jira-comment [TCKT-123] text`** — posts a comment; the key is taken from the current branch when the branch is a ticket key, so `/jira-comment Fixed in this branch` is enough. **Omit the text** (e.g. `/jira-comment` on `TCKT-123`) and the agent analyzes all the branch's changes — committed since `dev`/`main`/`master` plus the working tree — and writes the comment itself.
+- **`/jira-comment [TCKT-123] text`** — posts a comment; the key is taken from the current branch when the branch is a ticket key, so `/jira-comment Fixed in this branch` is enough. **Attach screenshots** in the composer and they are uploaded to the issue and embedded in the comment. **Omit the text** (e.g. `/jira-comment` on `TCKT-123`) and the agent analyzes all the branch's changes — committed since the base branch plus the working tree — and writes the comment itself.
+- **`/jira-mr [target]`** / **`/jira-pr [target]`** — open a GitLab merge request or GitHub pull request from the ticket branch to `target` (default `dev`), using `docs/jira/<KEY>.md` for the ticket link, root-cause summary and test plan. Both commands detect the provider from `origin`.
 - **`jira_ticket` tool** — fetch one issue (summary, description, status, labels, components, fix versions, environment, parent/subtasks, attachments, full comment thread) without touching git.
 - **`jira_search` tool** — JQL search (max 50), read-only.
 - **`jira_transition` tool** — list or apply workflow transitions; writes to Jira.
-- **`jira_comment` tool** — post a comment (progress, findings, completion) on one issue.
+- **`jira_comment` tool** — post a comment (progress, findings, completion), optionally with local image paths via `attachments`; images are uploaded and embedded.
 
 ```
 package.json      dsh.bundle.patch + dsh.client (platform: web); exports "." and "./client"
 cordis.patch.yml  insert row  id: jira → dsh-plugin-jira
 index.js          host entry: apply() wires the modules below
 lib/config.js     credential refs, auth header, rejected-credential hint
+lib/requests.js   GitHub PR / GitLab MR creation from the change report
 lib/repo.js       .dsh-jira.json: base, branch template, worktree, dirty guard, field IDs
-lib/attachments.js  download attachments into docs/jira/<KEY>/
+lib/attachments.js  download/upload attachments; composer images → comment media
 lib/adf.js        Markdown → Atlassian Document Format
 lib/jira.js       REST v3 (issues, comments, search, transitions), rich rendering, /jira-check
 lib/git.js        branch/worktree prep, dirty guard, branch diff and status
@@ -79,6 +81,8 @@ Then open **Settings → Jira** and store the site URL, email and API token. Rem
 
 The token lives in the DSH credential store, never in this repository or the settings files. **Check connection** runs `/jira-check` in the current session, so its result also appears in that conversation.
 
+For `/jira-mr`, GitLab authentication comes from `GITLAB_TOKEN` (DSH credential store or environment) or the git credential helper for that host. `/jira-pr` uses the authenticated `gh` CLI.
+
 ## Credentials
 
 The page writes three credential references: `JIRA_SITE`, `JIRA_EMAIL`, `JIRA_API_TOKEN`. Env vars of the same names also resolve, so CI/headless can skip the page.
@@ -99,6 +103,7 @@ Optional `.dsh-jira.json` at the repository root:
   "worktree": false,
   "allowDirty": false,
   "downloadAttachments": true,
+  "provider": "gitlab",
   "fields": {
     "acceptanceCriteria": "customfield_10001",
     "storyPoints": "customfield_10002",
@@ -114,8 +119,9 @@ Optional `.dsh-jira.json` at the repository root:
 - `allowDirty` — allow switching with tracked changes (default false; untracked files never block).
 - `downloadAttachments` — download attachments into `docs/jira/<KEY>/` (default true, 10 MB per file).
 - `fields` — friendly label → Jira custom field id; rendered in the brief.
+- `provider` — `github` or `gitlab` when the remote host name does not contain it (self-hosted GitHub/GitLab).
 
-`/jira-do` reuses an existing branch and reports how many commits ahead it is. Issue-type briefs add specific focus: bug (root cause + repro), story (acceptance criteria), spike (options/recommendation).
+`/jira-mr` and `/jira-pr` require a clean tree (commit the branch, including the report) and push the branch before opening the request. `/jira-do` reuses an existing branch and reports how many commits ahead it is. Issue-type briefs add specific focus: bug (root cause + repro), story (acceptance criteria), spike (options/recommendation).
 
 ## Check
 
