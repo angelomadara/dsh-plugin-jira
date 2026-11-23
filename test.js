@@ -12,6 +12,7 @@ import { baseBranch, ensureWorktree, findTicketWorktree } from './lib/git.js'
 import { renderIssue } from './lib/jira.js'
 import { downloadAttachments } from './lib/attachments.js'
 import { branchName, keyFromBranch, repoConfig } from './lib/repo.js'
+import { buildRequestBody, extractSection, parseRemote } from './lib/requests.js'
 
 const cwd = mkdtempSync(join(tmpdir(), 'jira-plugin-'))
 const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' })
@@ -57,6 +58,8 @@ apply(ctx)
 assert.equal(registered.commands['jira-do'].name, 'jira-do')
 assert.equal(registered.commands['jira-check'].name, 'jira-check')
 assert.equal(registered.commands['jira-comment'].name, 'jira-comment')
+assert.equal(registered.commands['jira-mr'].name, 'jira-mr')
+assert.equal(registered.commands['jira-pr'].name, 'jira-pr')
 assert.equal(registered.tools.jira_ticket.name, 'jira_ticket')
 assert.equal(registered.tools.jira_comment.name, 'jira_comment')
 
@@ -169,7 +172,32 @@ assert.equal(markdown.content[2].type, 'codeBlock')
 assert.equal(markdown.content[2].attrs.language, 'js')
 assert.equal(markdown.content[3].content[0].marks[0].type, 'link')
 
-await assert.rejects(() => registered.tools.jira_comment.execute({ key: 'QUBE-1', body: '  ' }), /must not be empty/)
+// A screenshot is uploaded, then embedded as a media node in the comment.
+const imagePath = join(mkdtempSync(join(tmpdir(), 'jira-image-')), 'shot.png')
+writeFileSync(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=', 'base64'))
+let imageBody
+globalThis.fetch = async (url, init) => {
+  lastRequest = { url, init }
+  if (url.endsWith('/attachments')) {
+    return { ok: true, json: async () => ([{ id: '77', filename: 'shot.png', mediaType: 'image/png' }]) }
+  }
+  if (url.includes('/attachment/content/77')) {
+    return {
+      status: 303,
+      url,
+      headers: new Headers({ location: 'https://api.media.atlassian.com/file/11111111-1111-1111-1111-111111111111/binary?token=x' }),
+    }
+  }
+  imageBody = JSON.parse(init.body).body
+  return { ok: true, json: async () => ({ id: '10004' }) }
+}
+const imageComment = await registered.tools.jira_comment.execute({ key: 'QUBE-1', body: 'Screenshot', attachments: [imagePath] })
+assert.equal(imageComment.id, '10004')
+const media = imageBody.content.find((block) => block.type === 'mediaSingle')
+assert.equal(media.content[0].attrs.id, '11111111-1111-1111-1111-111111111111')
+assert.equal(media.content[0].attrs.type, 'file')
+
+await assert.rejects(() => registered.tools.jira_comment.execute({ key: 'QUBE-1', body: '  ' }), /body` or `attachments` is required/)
 
 // /jira-comment takes the key from the current branch when the input does not name one.
 const inferred = await registered.commands['jira-comment'].handler({ rawInput: 'Progress update', agent })
@@ -241,6 +269,17 @@ assert.equal(registration.spec.name, 'settings.section')
 assert.equal(registration.spec.id, 'jira')
 assert.equal(registration.spec.label(), 'Jira')
 assert.equal(typeof registration.component, 'function')
+
+// PR/MR helpers: remote parsing and the structured description.
+assert.deepEqual(parseRemote('https://gitlab.aique.cloud/group/repo.git'), { host: 'gitlab.aique.cloud', path: 'group/repo' })
+assert.deepEqual(parseRemote('git@github.com:owner/repo.git'), { host: 'github.com', path: 'owner/repo' })
+const report = '## Root cause\nThe cache key ignored the DB.\n\n## Test plan\n- run node test.js\n\n## Risks\nNone.'
+assert.equal(extractSection(report, ['test plan']), '- run node test.js')
+const prBody = buildRequestBody({ key: 'QUBE-1', summary: 'Fix it', site: 'https://example.atlassian.net', branch: 'QUBE-1', target: 'dev', report })
+assert.match(prBody, /\[QUBE-1 — Fix it\]\(https:\/\/example\.atlassian\.net\/browse\/QUBE-1\)/)
+assert.match(prBody, /The cache key ignored the DB\./)
+assert.match(prBody, /- run node test\.js/)
+assert.match(prBody, /\*\*Branch:\*\* `QUBE-1` → `dev`/)
 
 // Repo config: base, branch template and custom field ids.
 const configDir = mkdtempSync(join(tmpdir(), 'jira-config-'))
