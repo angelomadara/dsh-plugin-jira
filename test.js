@@ -12,7 +12,7 @@ import { baseBranch, ensureWorktree, findTicketWorktree } from './lib/git.js'
 import { renderIssue } from './lib/jira.js'
 import { downloadAttachments } from './lib/attachments.js'
 import { branchName, keyFromBranch, repoConfig } from './lib/repo.js'
-import { buildRequestBody, commitTicketChanges, extractSection, parseRemote } from './lib/requests.js'
+import { buildRequestBody, commitTicketChanges, extractSection, parseRemote, parseTargets } from './lib/requests.js'
 
 const cwd = mkdtempSync(join(tmpdir(), 'jira-plugin-'))
 const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' })
@@ -280,6 +280,12 @@ assert.match(prBody, /\[QUBE-1 — Fix it\]\(https:\/\/example\.atlassian\.net\/
 assert.match(prBody, /The cache key ignored the DB\./)
 assert.match(prBody, /- run node test\.js/)
 assert.match(prBody, /\*\*Branch:\*\* `QUBE-1` → `dev`/)
+
+// One command can target several branches.
+assert.deepEqual(parseTargets('', 'dev'), ['dev'])
+assert.deepEqual(parseTargets(' dev  staging main ', 'dev'), ['dev', 'staging', 'main'])
+assert.deepEqual(parseTargets('dev dev', 'dev'), ['dev'])
+assert.throws(() => parseTargets('dev;rm', 'dev'), /invalid target/)
 
 // Auto-commit: tracked changes + the ticket report, but not unrelated untracked files.
 const autoDir = mkdtempSync(join(tmpdir(), 'jira-auto-'))

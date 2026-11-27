@@ -8,7 +8,7 @@ Jira ticket intake for [DeepSeek Harness](https://github.com/deepseek-ai/deepsee
 - **`/jira-find [JQL]`** — searches Jira; with no input it lists your open issues.
 - **`/jira-transition TCKT-123 [status]`** — lists the allowed transitions, or moves the ticket to the matching transition/destination status.
 - **`/jira-comment [TCKT-123] text`** — posts a comment; the key is taken from the current branch when the branch is a ticket key, so `/jira-comment Fixed in this branch` is enough. **Attach screenshots** in the composer and they are uploaded to the issue and embedded in the comment. **Omit the text** (e.g. `/jira-comment` on `TCKT-123`) and the agent analyzes all the branch's changes — committed since the base branch plus the working tree — and writes the comment itself.
-- **`/jira-mr [target]`** / **`/jira-pr [target]`** — open a GitLab merge request or GitHub pull request from the ticket branch to `target` (default `dev`), using `docs/jira/<KEY>.md` for the ticket link, root-cause summary and test plan. Both commands detect the provider from `origin`.
+- **`/jira-mr [target...]`** / **`/jira-pr [target...]`** — open a GitLab merge request or GitHub pull request from the ticket branch to one or more targets (e.g. `/jira-mr dev staging main`, default `dev`), using `docs/jira/<KEY>.md` for the ticket link, root-cause summary and test plan. Both commands detect the provider from `origin` and reuse an existing open request per target.
 - **`jira_ticket` tool** — fetch one issue (summary, description, status, labels, components, fix versions, environment, parent/subtasks, attachments, full comment thread) without touching git.
 - **`jira_search` tool** — JQL search (max 50), read-only.
 - **`jira_transition` tool** — list or apply workflow transitions; writes to Jira.
@@ -121,7 +121,7 @@ Optional `.dsh-jira.json` at the repository root:
 - `fields` — friendly label → Jira custom field id; rendered in the brief.
 - `provider` — `github` or `gitlab` when the remote host name does not contain it (self-hosted GitHub/GitLab).
 
-`/jira-mr` and `/jira-pr` commit the whole working tree (`git add -A`, gitignored files excluded — untracked files included), push the branch, then open the request. `/jira-do` reuses an existing branch and reports how many commits ahead it is. Issue-type briefs add specific focus: bug (root cause + repro), story (acceptance criteria), spike (options/recommendation).
+`/jira-mr` and `/jira-pr` commit the whole working tree (`git add -A`, gitignored files excluded — untracked files included), push the branch once, then open one request per target; a failure on one target is reported without hiding the others. `/jira-do` reuses an existing branch and reports how many commits ahead it is. Issue-type briefs add specific focus: bug (root cause + repro), story (acceptance criteria), spike (options/recommendation).
 
 ## Check
 
